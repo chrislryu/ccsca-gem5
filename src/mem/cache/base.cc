@@ -134,10 +134,20 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
         "Compressed cache %s does not have a compression algorithm", name());
     if (compressor)
         compressor->setCache(this);
+
+    char logName[100] = "";
+    char logPrefix[] = "";
+    char logSuffix[] = ".csv";
+    strcat(logName, logPrefix);
+    strcat(logName, p.name.c_str());
+    strcat(logName, logSuffix);
+
+    log = fopen(logName,"w");
 }
 
 BaseCache::~BaseCache()
 {
+    fclose(log);
     delete tempBlock;
 }
 

@@ -977,6 +977,9 @@ class BaseCache : public ClockedObject
      * Normally this is all possible memory addresses. */
     const AddrRangeList addrRanges;
 
+    /** The log file used for logging trace of cache. **/
+    FILE *log;
+
   public:
     /** System we are currently operating in. */
     System *system;
@@ -1299,11 +1302,21 @@ class BaseCache : public ClockedObject
             if (missCount == 0)
                 exitSimLoop("A cache reached the maximum miss count");
         }
+        writeToLog(pkt, 1);
     }
     void incHitCount(PacketPtr pkt)
     {
         assert(pkt->req->requestorId() < system->maxRequestors());
         stats.cmdStats(pkt).hits[pkt->req->requestorId()]++;
+        writeToLog(pkt, 0);
+    }
+    void writeToLog(PacketPtr pkt, uint64_t type)
+    {
+        Addr pc = pkt->req->getPC();
+        Addr paddr = pkt->req->getPaddr();
+        Addr vaddr = pkt->req->getVaddr();
+        Tick tick = pkt->req->time();
+        fprintf(log, "%" PRIu64 ",%" PRIu64 ",%" PRIu64 ",%" PRIu64 ",%" PRIu64 "\n", pc, paddr, vaddr, tick, type);
     }
 
     /**

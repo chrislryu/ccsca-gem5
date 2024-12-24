@@ -283,6 +283,12 @@ else:
     MemConfig.config_mem(args, system)
     config_filesystem(system, args)
 
+class ampm(AMPMPrefetcher):
+    ampm = AccessMapPatternMatching()
+
+for cpu in system.cpu:
+    cpu.icache.prefectcher = ampm()
+
 system.workload = SEWorkload.init_compatible(mp0_path)
 
 if args.wait_gdb:

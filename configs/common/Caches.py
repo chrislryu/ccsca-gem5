@@ -65,7 +65,7 @@ class L1_ICache(L1Cache):
 
 
 class L1_DCache(L1Cache):
-    pass
+    clusivity = "mostly_excl"
 
 
 class L2Cache(Cache):

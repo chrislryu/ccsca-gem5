@@ -477,6 +477,25 @@ class BaseCache : public ClockedObject
                                   const Cycles lookup_lat) const;
 
     /**
+     * Checks if cache reload needs to be performed.
+     */
+    virtual void checkCacheReload() {}
+
+    /**
+     * Performs cache reload.
+     */
+    virtual void doCacheReload() {}
+
+    /**
+     * Inserts the specified packet and block into the cache
+     * @param pkt The memory request to perform.
+     * @param blk The cache block to be updated.
+     */
+    virtual void insert(PacketPtr pkt, CacheBlk *blk) {
+        tags->insertBlock(pkt, blk);
+    }
+
+    /**
      * Does all the processing necessary to perform the provided request.
      * @param pkt The memory request to perform.
      * @param blk The cache block to be updated.

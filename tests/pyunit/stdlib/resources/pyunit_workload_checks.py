@@ -1,4 +1,4 @@
-# Copyright (c) 2022 The Regents of the University of California
+# Copyright (c) 2023 The Regents of the University of California
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -24,17 +24,35 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-import unittest
 import os
+import unittest
+from pathlib import Path
+from typing import Dict
+from unittest.mock import patch
 
-from gem5.resources.workload import Workload, CustomWorkload
+from gem5.resources.client import (
+    _create_clients,
+    clientwrapper,
+)
 from gem5.resources.resource import (
     BinaryResource,
     DiskImageResource,
+    WorkloadResource,
     obtain_resource,
 )
+from gem5.resources.workload import (
+    CustomWorkload,
+    Workload,
+)
 
-from typing import Dict
+mock_config_json = {
+    "sources": {
+        "baba": {
+            "url": Path(__file__).parent / "refs/workload-checks.json",
+            "isMongo": False,
+        }
+    },
+}
 
 
 class CustomWorkloadTestSuite(unittest.TestCase):
@@ -43,59 +61,56 @@ class CustomWorkloadTestSuite(unittest.TestCase):
     """
 
     @classmethod
-    def setUpClass(cls) -> None:
-
-        os.environ["GEM5_RESOURCE_JSON"] = os.path.join(
-            os.path.realpath(os.path.dirname(__file__)),
-            "refs",
-            "workload-checks-custom-workload.json",
-        )
-
-        cls.custom_workload = CustomWorkload(
+    @patch(
+        "gem5.resources.client.clientwrapper",
+        new=None,
+    )
+    @patch(
+        "gem5.resources.client._create_clients",
+        side_effect=lambda x: _create_clients(mock_config_json),
+    )
+    def setUpClass(cls, mock_create_client) -> None:
+        cls.custom_workload = WorkloadResource(
             function="set_se_binary_workload",
             parameters={
-                "binary": obtain_resource("x86-hello64-static"),
+                "binary": obtain_resource(
+                    "x86-hello64-static-example", gem5_version="develop"
+                ),
                 "arguments": ["hello", 6],
             },
         )
 
-    @classmethod
-    def tearDownClass(cls):
-        # Unset the environment variable so this test does not interfere with
-        # others.
-        os.environ["GEM5_RESOURCE_JSON"]
-
     def test_get_function_str(self) -> None:
-        # Tests `CustomResource.get_function_str`
+        # Tests `CustomWorkload.get_function_str`
 
         self.assertEqual(
             "set_se_binary_workload", self.custom_workload.get_function_str()
         )
 
     def test_get_parameters(self) -> None:
-        # Tests `CustomResource.get_parameter`
+        # Tests `CustomWorkload.get_parameter`
 
         parameters = self.custom_workload.get_parameters()
         self.assertTrue(isinstance(parameters, Dict))
-        self.assertEquals(2, len(parameters))
+        self.assertEqual(2, len(parameters))
 
         self.assertTrue("binary" in parameters)
         self.assertTrue(isinstance(parameters["binary"], BinaryResource))
 
         self.assertTrue("arguments" in parameters)
         self.assertTrue(isinstance(parameters["arguments"], list))
-        self.assertEquals(2, len(parameters["arguments"]))
-        self.assertEquals("hello", parameters["arguments"][0])
-        self.assertEquals(6, parameters["arguments"][1])
+        self.assertEqual(2, len(parameters["arguments"]))
+        self.assertEqual("hello", parameters["arguments"][0])
+        self.assertEqual(6, parameters["arguments"][1])
 
     def test_add_parameters(self) -> None:
-        # Tests `CustomResource.set_parameter` for the case where we add a new
+        # Tests `CustomWorkload.set_parameter` for the case where we add a new
         # parameter value.
 
         self.custom_workload.set_parameter("test_param", 10)
 
         self.assertTrue("test_param" in self.custom_workload.get_parameters())
-        self.assertEquals(
+        self.assertEqual(
             10, self.custom_workload.get_parameters()["test_param"]
         )
 
@@ -103,18 +118,18 @@ class CustomWorkloadTestSuite(unittest.TestCase):
         del self.custom_workload.get_parameters()["test_param"]
 
     def test_override_parameter(self) -> None:
-        # Tests `CustomResource.set_parameter` for the case where we override
+        # Tests `CustomWorkload.set_parameter` for the case where we override
         # a parameter's value.
 
         old_value = self.custom_workload.get_parameters()["binary"]
 
         self.custom_workload.set_parameter("binary", "test")
         self.assertTrue("binary" in self.custom_workload.get_parameters())
-        self.assertEquals(
+        self.assertEqual(
             "test", self.custom_workload.get_parameters()["binary"]
         )
 
-        # We set the overridden parameter back to it's old value.
+        # We set the overridden parameter back to it's old value
         self.custom_workload.set_parameter("binary", old_value)
 
 
@@ -124,25 +139,21 @@ class WorkloadTestSuite(unittest.TestCase):
     """
 
     @classmethod
-    def setUpClass(cls):
-
-        os.environ["GEM5_RESOURCE_JSON"] = os.path.join(
-            os.path.realpath(os.path.dirname(__file__)),
-            "refs",
-            "workload-checks.json",
-        )
-        cls.workload = Workload("simple-boot")
-
-    @classmethod
-    def tearDownClass(cls):
-        # Unset the environment variable so this test does not interfere with
-        # others.
-        os.environ["GEM5_RESOURCE_JSON"]
+    @patch(
+        "gem5.resources.client.clientwrapper",
+        new=None,
+    )
+    @patch(
+        "gem5.resources.client._create_clients",
+        side_effect=lambda x: _create_clients(mock_config_json),
+    )
+    def setUpClass(cls, mock_create_client):
+        cls.workload = obtain_resource("simple-boot", gem5_version="develop")
 
     def test_get_function_str(self) -> None:
         # Tests `Resource.get_function_str`
 
-        self.assertEquals(
+        self.assertEqual(
             "set_kernel_disk_workload", self.workload.get_function_str()
         )
 
@@ -157,9 +168,9 @@ class WorkloadTestSuite(unittest.TestCase):
         self.assertTrue("kernel" in parameters)
         self.assertTrue(isinstance(parameters["kernel"], BinaryResource))
 
-        self.assertTrue("disk_image" in parameters)
+        self.assertTrue("disk-image" in parameters)
         self.assertTrue(
-            isinstance(parameters["disk_image"], DiskImageResource)
+            isinstance(parameters["disk-image"], DiskImageResource)
         )
 
         self.assertTrue("readfile_contents" in parameters)
@@ -174,7 +185,7 @@ class WorkloadTestSuite(unittest.TestCase):
         self.workload.set_parameter("test_param", 10)
 
         self.assertTrue("test_param" in self.workload.get_parameters())
-        self.assertEquals(10, self.workload.get_parameters()["test_param"])
+        self.assertEqual(10, self.workload.get_parameters()["test_param"])
 
         # Cleanup
         del self.workload.get_parameters()["test_param"]
@@ -187,7 +198,7 @@ class WorkloadTestSuite(unittest.TestCase):
 
         self.workload.set_parameter("readfile_contents", "test")
         self.assertTrue("readfile_contents" in self.workload.get_parameters())
-        self.assertEquals(
+        self.assertEqual(
             "test", self.workload.get_parameters()["readfile_contents"]
         )
 

@@ -27,40 +27,44 @@
 import os
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from gem5.resources.resource import *
-
+from gem5.isas import ISA
+from gem5.resources.client import (
+    _create_clients,
+    clientwrapper,
+)
 from gem5.resources.looppoint import (
     LooppointCsvLoader,
     LooppointJsonLoader,
 )
+from gem5.resources.resource import *
 
-from gem5.isas import ISA
+mock_json_path = Path(__file__).parent / "refs/resource-specialization.json"
+
+mock_config_json = {
+    "sources": {
+        "baba": {
+            "url": mock_json_path,
+            "isMongo": False,
+        }
+    },
+}
 
 
+@patch(
+    "gem5.resources.client.clientwrapper",
+    new=None,
+)
+@patch(
+    "gem5.resources.client._create_clients",
+    side_effect=lambda x: _create_clients(mock_config_json),
+)
 class ResourceSpecializationSuite(unittest.TestCase):
     """This suite tests that `gem5.resource.resource` casts to the correct
     `AbstractResource` specialization when using the `obtain_resource`
     function.
     """
-
-    @classmethod
-    def setUpClass(cls):
-        """Prior to running the suite we set the resource directory to
-        "ref/resource-specialization.json"
-        """
-        os.environ["GEM5_RESOURCE_JSON"] = os.path.join(
-            os.path.realpath(os.path.dirname(__file__)),
-            "refs",
-            "resource-specialization.json",
-        )
-
-    @classmethod
-    def tearDownClass(cls) -> None:
-        """After running the suite we unset the gem5-resource JSON file, as to
-        not interfere with others tests.
-        """
-        del os.environ["GEM5_RESOURCE_JSON"]
 
     def get_resource_dir(cls) -> str:
         """To ensure the resources are cached to the same directory as all
@@ -76,109 +80,116 @@ class ResourceSpecializationSuite(unittest.TestCase):
             "resources",
         )
 
-    def test_binary_resource(self) -> None:
+    def test_binary_resource(self, mock_create_clients) -> None:
         """Tests the loading of of a BinaryResource"""
         resource = obtain_resource(
-            resource_name="binary-example",
+            resource_id="binary-example",
             resource_directory=self.get_resource_dir(),
+            gem5_version="develop",
         )
 
         self.assertIsInstance(resource, BinaryResource)
 
-        self.assertEquals(
-            "binary-example documentation.", resource.get_documentation()
+        self.assertEqual(
+            "binary-example documentation.", resource.get_description()
         )
-        self.assertEquals("src/simple", resource.get_source())
-        self.assertEquals(ISA.ARM, resource.get_architecture())
+        self.assertEqual("src/simple", resource.get_source())
+        self.assertEqual(ISA.ARM, resource.get_architecture())
 
-    def test_kernel_resource(self) -> None:
+    def test_kernel_resource(self, mock_create_clients) -> None:
         """Tests the loading of a KernelResource."""
         resource = obtain_resource(
-            resource_name="kernel-example",
+            resource_id="kernel-example",
             resource_directory=self.get_resource_dir(),
+            gem5_version="develop",
         )
 
         self.assertIsInstance(resource, KernelResource)
 
-        self.assertEquals(
-            "kernel-example documentation.", resource.get_documentation()
+        self.assertEqual(
+            "kernel-example documentation.", resource.get_description()
         )
-        self.assertEquals("src/linux-kernel", resource.get_source())
-        self.assertEquals(ISA.RISCV, resource.get_architecture())
+        self.assertEqual("src/linux-kernel", resource.get_source())
+        self.assertEqual(ISA.RISCV, resource.get_architecture())
 
-    def test_bootloader_resource(self) -> None:
+    def test_bootloader_resource(self, mock_create_clients) -> None:
         """Tests the loading of a BootloaderResource."""
         resource = obtain_resource(
-            resource_name="bootloader-example",
+            resource_id="bootloader-example",
             resource_directory=self.get_resource_dir(),
+            gem5_version="develop",
         )
 
         self.assertIsInstance(resource, BootloaderResource)
 
-        self.assertEquals(
-            "bootloader documentation.", resource.get_documentation()
+        self.assertEqual(
+            "bootloader documentation.", resource.get_description()
         )
         self.assertIsNone(resource.get_source())
         self.assertIsNone(resource.get_architecture())
 
-    def test_disk_image_resource(self) -> None:
+    def test_disk_image_resource(self, mock_create_clients) -> None:
         """Tests the loading of a DiskImageResource."""
         resource = obtain_resource(
-            resource_name="disk-image-example",
+            resource_id="disk-image-example",
             resource_directory=self.get_resource_dir(),
+            gem5_version="develop",
         )
 
         self.assertIsInstance(resource, DiskImageResource)
 
-        self.assertEquals(
-            "disk-image documentation.", resource.get_documentation()
+        self.assertEqual(
+            "disk-image documentation.", resource.get_description()
         )
-        self.assertEquals("src/x86-ubuntu", resource.get_source())
-        self.assertEquals("1", resource.get_root_partition())
+        self.assertEqual("src/x86-ubuntu", resource.get_source())
+        self.assertEqual("1", resource.get_root_partition())
 
-    def test_checkpoint_resource(self) -> None:
+    def test_checkpoint_resource(self, mock_create_clients) -> None:
         """Tests the loading of a CheckpointResource."""
         resource = obtain_resource(
-            resource_name="checkpoint-example",
+            resource_id="checkpoint-example",
             resource_directory=self.get_resource_dir(),
+            gem5_version="develop",
         )
 
         self.assertIsInstance(resource, CheckpointResource)
 
-        self.assertEquals(
-            "checkpoint-example documentation.", resource.get_documentation()
+        self.assertEqual(
+            "checkpoint-example documentation.", resource.get_description()
         )
         self.assertIsNone(resource.get_source())
 
-    def test_git_resource(self) -> None:
+    def test_git_resource(self, mock_create_clients) -> None:
         """Tests the loading of a GitResource."""
         resource = obtain_resource(
-            resource_name="git-example",
+            resource_id="git-example",
             resource_directory=self.get_resource_dir(),
+            gem5_version="develop",
         )
 
         self.assertIsInstance(resource, GitResource)
 
-        self.assertIsNone(resource.get_documentation())
+        self.assertIsNone(resource.get_description())
         self.assertIsNone(resource.get_source())
 
-    def test_simpoint_directory_resource(self) -> None:
+    def test_simpoint_directory_resource(self, mock_create_clients) -> None:
         """Tests the loading of a Simpoint directory resource."""
         resource = obtain_resource(
-            resource_name="simpoint-directory-example",
+            resource_id="simpoint-directory-example",
             resource_directory=self.get_resource_dir(),
+            gem5_version="develop",
         )
 
         self.assertIsInstance(resource, SimpointDirectoryResource)
 
-        self.assertEquals(
-            "simpoint directory documentation.", resource.get_documentation()
+        self.assertEqual(
+            "simpoint directory documentation.", resource.get_description()
         )
         self.assertIsNone(resource.get_source())
 
-        self.assertEquals(1000000, resource.get_simpoint_interval())
-        self.assertEquals(1000000, resource.get_warmup_interval())
-        self.assertEquals(
+        self.assertEqual(1000000, resource.get_simpoint_interval())
+        self.assertEqual(1000000, resource.get_warmup_interval())
+        self.assertEqual(
             Path(
                 Path(self.get_resource_dir())
                 / "simpoint-directory-example"
@@ -186,7 +197,7 @@ class ResourceSpecializationSuite(unittest.TestCase):
             ),
             resource.get_simpoint_file(),
         )
-        self.assertEquals(
+        self.assertEqual(
             Path(
                 Path(self.get_resource_dir())
                 / "simpoint-directory-example"
@@ -194,61 +205,63 @@ class ResourceSpecializationSuite(unittest.TestCase):
             ),
             resource.get_weight_file(),
         )
-        self.assertEquals("Example Workload", resource.get_workload_name())
+        self.assertEqual("Example Workload", resource.get_workload_name())
 
-    def test_simpoint_resource(self) -> None:
+    def test_simpoint_resource(self, mock_create_clients) -> None:
         """Tests the loading of a Simpoint resource."""
         resource = obtain_resource(
-            resource_name="simpoint-example",
+            resource_id="simpoint-example",
             resource_directory=self.get_resource_dir(),
+            gem5_version="develop",
         )
 
         self.assertIsInstance(resource, SimpointResource)
 
-        self.assertEquals(
-            "simpoint documentation.", resource.get_documentation()
-        )
+        self.assertEqual("simpoint documentation.", resource.get_description())
         self.assertIsNone(resource.get_source())
         self.assertIsNone(resource.get_local_path())
 
-        self.assertEquals(1000000, resource.get_simpoint_interval())
-        self.assertEquals(23445, resource.get_warmup_interval())
-        self.assertEquals([2, 3, 4, 15], resource.get_simpoint_list())
-        self.assertEquals([0.1, 0.2, 0.4, 0.3], resource.get_weight_list())
+        self.assertEqual(1000000, resource.get_simpoint_interval())
+        self.assertEqual(23445, resource.get_warmup_interval())
+        self.assertEqual([2, 3, 4, 15], resource.get_simpoint_list())
+        self.assertEqual([0.1, 0.2, 0.4, 0.3], resource.get_weight_list())
 
-    def test_file_resource(self) -> None:
+    def test_file_resource(self, mock_create_clients) -> None:
         """Tests the loading of a FileResource."""
         resource = obtain_resource(
-            resource_name="file-example",
+            resource_id="file-example",
             resource_directory=self.get_resource_dir(),
+            resource_version="1.0.0",
+            gem5_version="develop",
         )
 
         self.assertIsInstance(resource, FileResource)
 
-        self.assertIsNone(resource.get_documentation())
+        self.assertIsNone(resource.get_description())
         self.assertIsNone(resource.get_source())
 
-    def test_directory_resource(self) -> None:
+    def test_directory_resource(self, mock_create_clients) -> None:
         """Tests the loading of a DirectoryResource."""
         resource = obtain_resource(
-            resource_name="directory-example",
+            resource_id="directory-example",
             resource_directory=self.get_resource_dir(),
         )
 
         self.assertIsInstance(resource, DirectoryResource)
 
-        self.assertEquals(
-            "directory-example documentation.", resource.get_documentation()
+        self.assertEqual(
+            "directory-example documentation.", resource.get_description()
         )
         self.assertIsNone(resource.get_source())
 
-    def test_looppoint_pinpoints_resource(self) -> None:
+    def test_looppoint_pinpoints_resource(self, mock_create_clients) -> None:
         """Tests the creation of LooppointCreatorCSVResource via a Looppoint
         pinpoints csv file."""
 
         resource = obtain_resource(
-            resource_name="looppoint-pinpoint-csv-resource",
+            resource_id="looppoint-pinpoint-csv-resource",
             resource_directory=self.get_resource_dir(),
+            gem5_version="develop",
         )
 
         self.assertIsInstance(resource, LooppointCsvResource)
@@ -257,27 +270,31 @@ class ResourceSpecializationSuite(unittest.TestCase):
         # LooppointCsvLoader.
         self.assertIsInstance(resource, LooppointCsvLoader)
 
-        self.assertEquals(
-            "A looppoint pinpoints csv file.", resource.get_documentation()
+        self.assertEqual(
+            "A looppoint pinpoints csv file.", resource.get_description()
         )
         self.assertIsNone(resource.get_source())
 
-    def test_looppoint_json_restore_resource(self) -> None:
+    def test_looppoint_json_restore_resource(
+        self, mock_create_clients
+    ) -> None:
         """Tests the creation of LooppointJsonResource via a
         Looppoint JSON file."""
 
         resource = obtain_resource(
-            resource_name="looppoint-json-restore-resource-region-1",
+            resource_id="looppoint-json-restore-resource-region-1-example",
             resource_directory=self.get_resource_dir(),
+            resource_version="1.0.0",
+            gem5_version="develop",
         )
 
         self.assertIsInstance(resource, LooppointJsonResource)
         self.assertIsInstance(resource, LooppointJsonLoader)
 
-        self.assertEquals(1, len(resource.get_regions()))
+        self.assertEqual(1, len(resource.get_regions()))
         self.assertTrue("1" in resource.get_regions())
 
-        self.assertEquals(
-            "A looppoint json file resource.", resource.get_documentation()
+        self.assertEqual(
+            "A looppoint json file resource.", resource.get_description()
         )
         self.assertIsNone(resource.get_source())

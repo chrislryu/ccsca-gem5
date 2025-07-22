@@ -489,7 +489,16 @@ class BaseCache : public ClockedObject
     /**
      * Checks if cache reload needs to be performed.
      */
-    virtual void checkCacheReload() {}
+    virtual void checkCacheReload() {
+        char logName[100] = "";
+        char logPrefix[] = "";
+        char logSuffix[] = ".txt";
+        strcat(logName, logPrefix);
+        strcat(logName, p.name.c_str());
+        strcat(logName, logSuffix);
+
+        cacheReload = fopen(logName, "r");
+    }
 
     /**
      * Performs cache reload.
@@ -1006,8 +1015,13 @@ class BaseCache : public ClockedObject
      * Normally this is all possible memory addresses. */
     const AddrRangeList addrRanges;
 
+    char fileSuffix[100] = "";
+
     /** The log file used for logging trace of cache. **/
     FILE *log;
+
+    /** The file used to fetch reload data. **/
+    FILE *cacheReload;
 
   public:
     /** System we are currently operating in. */

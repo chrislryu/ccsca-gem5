@@ -148,6 +148,8 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
     strcat(logName, logSuffix);
 
     log = fopen(logName,"w");
+
+    readCacheAction();
 }
 
 BaseCache::~BaseCache()
@@ -1250,10 +1252,209 @@ BaseCache::calculateAccessLatency(const CacheBlk* blk, const uint32_t delay,
     return lat;
 }
 
+void
+BaseCache::checkCacheAction() {
+    // Increment access count
+    accessCount++;
+    
+    // Check if there's a reload entry matching this access count
+    for (const auto& entry : reloadEntries) {
+        if (entry.accessCount == accessCount) {
+            DPRINTF(Cache, "Cache action triggered at access %u: %d\n", 
+                    accessCount, static_cast<int>(entry.actionType));
+            
+            switch (entry.actionType) {
+                case CacheActionType::CLEAR:
+                    doClear();
+                    break;
+                case CacheActionType::SAVE:
+                    // Save functionality not implemented yet
+                    DPRINTF(Cache, "Save action not implemented\n");
+                    doSave(entry.actionDataNum);
+                    break;
+                case CacheActionType::LOAD:
+                    // Load functionality not implemented yet  
+                    DPRINTF(Cache, "Load action not implemented\n");
+                    doLoad(entry.actionDataNum);
+                    break;
+                case CacheActionType::MODIFY:
+                    doModify(entry.actionDataNum, entry.actionData);
+                    break;
+                default:
+                    DPRINTF(Cache, "Unknown cache action type\n");
+                    break;
+            }
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+void
+BaseCache::doClear()
+{
+    DPRINTF(Cache, "Clearing cache contents (reinitializing tags)\n");
+    
+    // Invalidate all blocks in the cache
+    tags->forEachBlk([this](CacheBlk &blk) {
+        if (blk.isValid()) {
+            // Clear the block without generating writebacks
+            blk.invalidate();
+        }
+    });
+    
+    // Reset any pending MSHRs and write buffer entries
+    // Note: This is a simplified implementation - in a real scenario
+    // you might want to handle outstanding requests more carefully
+    
+    DPRINTF(Cache, "Cache cleared successfully\n");
+}
+
+void
+BaseCache::doModify(uint32_t blockNum, const std::string& data)
+{
+    DPRINTF(Cache, "Modifying block %u with data: %s\n", blockNum, data.c_str());
+    
+    // Calculate the address for the given block number
+    Addr blockAddr = blockNum * blkSize;
+    
+    // Find the block in the cache
+    CacheBlk *blk = tags->findBlock({blockAddr, false}); // assuming non-secure
+    
+    if (!blk || !blk->isValid()) {
+        // Block not present or invalid, need to allocate
+        DPRINTF(Cache, "Block %u not found, allocating new block\n", blockNum);
+        
+        // Create a dummy packet for allocation
+        RequestPtr req = std::make_shared<Request>(blockAddr, blkSize, 0, 0);
+        PacketPtr pkt = new Packet(req, MemCmd::ReadReq);
+        
+        PacketList writebacks;
+        blk = allocateBlock(pkt, writebacks);
+        
+        if (!blk) {
+            DPRINTF(Cache, "Failed to allocate block %u\n", blockNum);
+            delete pkt;
+            return;
+        }
+        
+        // Handle any writebacks that occurred during allocation
+        if (!writebacks.empty()) {
+            doWritebacks(writebacks, curTick());
+        }
+        
+        delete pkt;
+    }
+    
+    // Convert string data to binary and write to block
+    // This is a simplified implementation - you might want more sophisticated
+    // data encoding based on your specific requirements
+    size_t dataLen = std::min(data.length(), (size_t)blkSize);
+    memcpy(blk->data, data.c_str(), dataLen);
+    
+    // If data is shorter than block size, zero-fill the rest
+    if (dataLen < blkSize) {
+        memset(blk->data + dataLen, 0, blkSize - dataLen);
+    }
+    
+    // Mark block as valid and dirty
+    blk->setCoherenceBits(CacheBlk::ReadableBit | CacheBlk::WritableBit | CacheBlk::DirtyBit);
+    
+    DPRINTF(Cache, "Successfully modified block %u\n", blockNum);
+}
+
+BaseCache::doSave(uint32_t stateId)
+{
+    DPRINTF(Cache, "Saving cache state with ID %u\n", stateId);
+    
+    std::vector<std::pair<Addr, std::vector<uint8_t>>> cacheState;
+    
+    // Iterate through all cache blocks and save their state
+    tags->forEachBlk([&](CacheBlk &blk) {
+        if (blk.isValid()) {
+            Addr blockAddr = regenerateBlkAddr(&blk);
+            std::vector<uint8_t> blockData(blk.data, blk.data + blkSize);
+            cacheState.emplace_back(blockAddr, std::move(blockData));
+            
+            DPRINTF(Cache, "Saved block at address %#x\n", blockAddr);
+        }
+    });
+    
+    // Store the cache state in the map
+    savedCacheStates[stateId] = std::move(cacheState);
+    
+    DPRINTF(Cache, "Successfully saved cache state %u with %d blocks\n", 
+            stateId, savedCacheStates[stateId].size());
+}
+
+void
+BaseCache::doLoad(uint32_t stateId)
+{
+    DPRINTF(Cache, "Loading cache state with ID %u\n", stateId);
+    // Check if the state exists
+    auto it = savedCacheStates.find(stateId);
+    if (it == savedCacheStates.end()) {
+        DPRINTF(Cache, "Cache state %u not found, cannot load\n", stateId);
+        return;
+    }
+    
+    // First clear the current cache state
+    doClear();
+    
+    // Restore the saved cache state
+    const auto& cacheState = it->second;
+    
+    for (const auto& [blockAddr, blockData] : cacheState) {
+        // Find or allocate a block for this address
+        CacheBlk *blk = tags->findBlock({blockAddr, false}); // assuming non-secure
+        
+        if (!blk || !blk->isValid()) {
+            // Block not present, need to allocate
+            DPRINTF(Cache, "Allocating block for address %#x during load\n", blockAddr);
+            
+            // Create a dummy packet for allocation
+            RequestPtr req = std::make_shared<Request>(blockAddr, blkSize, 0, 0);
+            PacketPtr pkt = new Packet(req, MemCmd::ReadReq);
+            
+            PacketList writebacks;
+            blk = allocateBlock(pkt, writebacks);
+            
+            if (!blk) {
+                DPRINTF(Cache, "Failed to allocate block for address %#x\n", blockAddr);
+                delete pkt;
+                continue;
+            }
+            
+            // Handle any writebacks that occurred during allocation
+            if (!writebacks.empty()) {
+                doWritebacks(writebacks, curTick());
+            }
+            
+            delete pkt;
+        }
+        
+        // Copy the saved data to the block
+        assert(blockData.size() == blkSize);
+        memcpy(blk->data, blockData.data(), blkSize);
+        
+        // Mark block as valid and dirty (since we're restoring data)
+        blk->setCoherenceBits(CacheBlk::ReadableBit | CacheBlk::WritableBit | CacheBlk::DirtyBit);
+        
+        DPRINTF(Cache, "Restored block at address %#x\n", blockAddr);
+    }
+    
+    DPRINTF(Cache, "Successfully loaded cache state %u with %d blocks\n", 
+            stateId, cacheState.size());
+}
+
 bool
 BaseCache::access(PacketPtr pkt, CacheBlk *&blk, Cycles &lat,
                   PacketList &writebacks)
 {
+    // Check for cache actions before normal access processing
+    checkCacheAction();
+    
     // sanity check
     assert(pkt->isRequest());
 

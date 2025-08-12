@@ -319,6 +319,29 @@ class BaseCache : public ClockedObject
 
   protected:
 
+    enum class CacheActionType : char
+    {
+        CLEAR,
+        SAVE,
+        LOAD,
+        MODIFY
+    };
+
+    struct CacheReloadEntry
+    {
+        uint32_t accessCount;
+        CacheActionType actionType;
+        uint32_t actionDataNum;
+        std::string actionData;
+    };
+
+    std::vector<CacheReloadEntry> reloadEntries;
+
+    uint32_t accessCount = 0;
+
+    // Map to store saved cache states
+    std::map<uint32_t, std::vector<std::pair<Addr, std::vector<uint8_t>>>> savedCacheStates;
+
     struct CacheAccessorImpl : CacheAccessor
     {
         BaseCache &cache;
@@ -489,21 +512,116 @@ class BaseCache : public ClockedObject
     /**
      * Checks if cache reload needs to be performed.
      */
-    virtual void checkCacheReload() {
+    virtual void readCacheReload() {
         char logName[100] = "";
         char logPrefix[] = "";
-        char logSuffix[] = ".txt";
+        char logSuffix[] = "_reload.txt";
         strcat(logName, logPrefix);
         strcat(logName, p.name.c_str());
         strcat(logName, logSuffix);
 
-        cacheReload = fopen(logName, "r");
+        FILE* reloadFile = fopen(logName, "r");
+        if (!reloadFile) {
+            DPRINTF(Cache, "Cache reload file %s not found\n", logName);
+            return;
+        }
+
+        char line[1024];
+        while (fgets(line, sizeof(line), reloadFile)) {
+            // Skip empty lines and comments
+            if (line[0] == '\n' || line[0] == '#') {
+                continue;
+            }
+
+            CacheReloadEntry entry;
+            char actionTypeStr[32];
+            char actionData[512] = "";
+            
+            // Parse the CSV line
+            int parsed = sscanf(line, "%u,%31[^,],%u,%511s", 
+                               &entry.accessCount, 
+                               actionTypeStr, 
+                               &entry.actionDataNum, 
+                               actionData);
+            
+            if (parsed < 2) {
+                DPRINTF(Cache, "Invalid reload line format: %s", line);
+                continue;
+            }
+
+            // Parse action type
+            if (strcmp(actionTypeStr, "clear") == 0) {
+                entry.actionType = CacheActionType::CLEAR;
+            } else if (strcmp(actionTypeStr, "save") == 0) {
+                entry.actionType = CacheActionType::SAVE;
+                if (parsed < 3) {
+                    DPRINTF(Cache, "Save action requires actionDataNum: %s", line);
+                    continue;
+                }
+            } else if (strcmp(actionTypeStr, "load") == 0) {
+                entry.actionType = CacheActionType::LOAD;
+                if (parsed < 3) {
+                    DPRINTF(Cache, "Load action requires actionDataNum: %s", line);
+                    continue;
+                }
+            } else if (strcmp(actionTypeStr, "modify") == 0) {
+                entry.actionType = CacheActionType::MODIFY;
+                if (parsed < 4) {
+                    DPRINTF(Cache, "Modify action requires actionDataNum and actionData: %s", line);
+                    continue;
+                }
+                entry.actionData = std::string(actionData);
+            } else {
+                DPRINTF(Cache, "Unknown action type: %s", actionTypeStr);
+                continue;
+            }
+
+            // Also update the reloadEntries map
+            reloadEntries.append(entry);
+
+            DPRINTF(Cache, "Loaded reload entry: accessCount=%u, actionType=%s\n",
+                    entry.accessCount, actionTypeStr);
+        }
+
+        fclose(reloadFile);
+        DPRINTF(Cache, "Loaded %d cache reload entries from %s\n", 
+                reloadEntries.size(), logName);
     }
 
     /**
      * Performs cache reload.
      */
     virtual void doCacheReload() {}
+
+    /**
+     * Checks if a cache action should be performed based on current access count.
+     * @return true if an action was performed, false otherwise
+     */
+    virtual void checkCacheAction();
+
+    /**
+     * Clears (reinitializes) the cache tags.
+     */
+    virtual void doClear();
+
+    /**
+     * Saves the current cache state to the saved states map.
+     * @param stateId The identifier for this saved state
+     */
+    virtual void doSave(uint32_t stateId);
+
+    /**
+     * Loads a previously saved cache state from the saved states map.
+     * @param stateId The identifier for the state to load
+     */
+    virtual void doLoad(uint32_t stateId);
+
+    /**
+     * Modifies a specific cache block by inserting string data.
+     * @param blockNum The block number to modify
+     * @param data The string data to insert
+     */
+    virtual void doModify(uint32_t blockNum, const std::string& data);
 
     /**
      * Inserts the specified packet and block into the cache
